@@ -1,13 +1,18 @@
-#include <wiringPi.h>
 #include <stdio.h>
+#include <pigpio.h>
 
 #define PIN 17
 
 void setup() {
-    // Inicializar wiringPi y configurar el pin 17 como entrada
-    wiringPiSetupGpio(); // Usa la numeración BCM
-    pinMode(PIN, INPUT);
-    pullUpDnControl(PIN, PUD_DOWN); // Establecer una resistencia pull-down
+    // Inicializar pigpio
+    if (gpioInitialise() < 0) {
+        fprintf(stderr, "pigpio inicialización fallida\n");
+        return;
+    }
+
+    // Configurar el pin 17 como entrada
+    gpioSetMode(PIN, PI_INPUT);
+    gpioSetPullUpDown(PIN, PI_PUD_DOWN); // Establecer una resistencia pull-down
 }
 
 int main(void) {
@@ -17,15 +22,18 @@ int main(void) {
 
     while (1) {
         // Leer el estado del pin 17
-        if (digitalRead(PIN) == HIGH) {
+        if (gpioRead(PIN) == 1) {
             printf("¡Tensión detectada en el pin 17!\n");
             // Esperar hasta que la tensión desaparezca para evitar múltiples mensajes
-            while (digitalRead(PIN) == HIGH) {
-                delay(100); // Esperar 100ms antes de volver a comprobar
+            while (gpioRead(PIN) == 1) {
+                time_sleep(0.1); // Esperar 100ms antes de volver a comprobar
             }
         }
-        delay(100); // Esperar 100ms antes de volver a comprobar
+        time_sleep(0.1); // Esperar 100ms antes de volver a comprobar
     }
+
+    // Finalizar pigpio
+    gpioTerminate();
 
     return 0;
 }
