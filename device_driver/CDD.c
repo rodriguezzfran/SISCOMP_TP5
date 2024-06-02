@@ -1,100 +1,212 @@
-#include <linux/module.h>        // Para módulos de kernel
-#include <linux/kernel.h>        // Para printk() y otros
-#include <linux/init.h>          // Para las macros __init y __exit
-#include <linux/gpio.h>          // Para GPIO functions
-#include <linux/interrupt.h>     // Para manejo de interrupciones
-#include <linux/kthread.h>       // Para manejo de hilos del kernel
-#include <linux/delay.h>         // Para funciones de delay
+/**
+ * gpio-button.c - A simple GPIO INPUT driver for Raspberry Pi
+ * 
+ * This CDD Raspberry Pi driver allows to detect a button press on a specific GPIO pin (pin 17)
+ * and show a message every time the button is pressed.
+ */
 
-#define GPIO_BUTTON 17  // Definir el GPIO del botón
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/fs.h>
+#include <linux/uaccess.h>
+#include <linux/io.h>
+#include <linux/interrupt.h>
+#include <linux/gpio.h>
 
-// Guardar el número de interrupción asociado al GPIO
-static int interrupt_number;
+#define DEVICE_NAME "gpio-button"
+#define GPIO_BUTTON 17
 
-// Guardar el hilo del kernel
-static struct task_struct *task_thread;
+// Define GPIO base addresses
+#define BCM2837_GPIO_ADDRESS 0x3F200000
 
-// Función que se ejecuta cuando se presiona el botón
+// Function prototypes
+static int device_open(struct inode *inode, struct file *file);
+static int device_release(struct inode *inode, struct file *file);
+static ssize_t device_read(struct file *file, char *buffer, size_t len, loff_t *offset);
+static irqreturn_t button_isr(int irq, void *data);
+static int __init gpio_button_init(void);
+static void __exit gpio_button_exit(void);
+
+// Global variables
+static int major_number             = 0;
+static unsigned int *gpio_registers = NULL;
+static int irq_number;
+static int button_pressed           = 0;
+
+// File operations structure (needed for character device)
+static struct file_operations fops = {
+	.open       = device_open,
+	.release    = device_release,
+	.read       = device_read,
+};
+
+/**
+ * @brief Interrupt Service Routine for the button press.
+ * 
+ * This function is called when the button connected to GPIO_BUTTON is pressed.
+ * 
+ * @param irq Interrupt number.
+ * @param data Pointer to the data (not used here).
+ * @return IRQ_HANDLED if successful.
+ */
 static irqreturn_t button_isr(int irq, void *data)
 {
-    int button_state = gpio_get_value(GPIO_BUTTON);
-    printk(KERN_INFO "Button ISR state: %d\n", button_state);
+    button_pressed = 1;
+    printk(KERN_INFO "GPIO BUTTON: Button pressed.\n");
     return IRQ_HANDLED;
 }
 
-// Función que se ejecuta en el hilo del kernel
-static int signal_thread_task(void *arg)
+/**
+ * @brief Device read function.
+ * 
+ * This function is called when the device file is read to get the button press status.
+ * 
+ * @param file Pointer to the file structure.
+ * @param buffer Pointer to the buffer where the data will be written.
+ * @param len Length of the buffer.
+ * @param offset Pointer to the offset in the file.
+ * @return Number of bytes read.
+ */
+static ssize_t device_read(struct file *file, char *buffer, size_t len, loff_t *offset)
 {
-    while (!kthread_should_stop())
-    {
-        int button_state = gpio_get_value(GPIO_BUTTON);
-        printk(KERN_INFO "Button thread state: %d\n", button_state);
-        msleep(200); // Espera 200 ms para volver a leer el estado del botón para evitar rebotes
-    }
+    char value_str[3];
+    size_t value_str_len;
+
+    // Write the current button state (1 or 0) to value_str
+    snprintf(value_str, sizeof(value_str), "%d\n", button_pressed);
+    value_str_len = strlen(value_str);
+    button_pressed = 0; // Reset button pressed state after reading
+
+    // If offset is greater than or equal to the length of the string, return 0
+    if (*offset >= value_str_len)
+        return 0;
+
+    // If len is greater than the remaining data, adjust len
+    if (len > value_str_len - *offset)
+        len = value_str_len - *offset;
+
+    // Copy data to user space
+    if (copy_to_user(buffer, value_str + *offset, len))
+        return -EFAULT;
+
+    *offset += len;
+    
+    return len;
+}
+
+/**
+ * @brief Device open function.
+ *
+ * This function is called when the device file is opened.
+ *
+ * @param inode Pointer to the inode structure.
+ * @param file Pointer to the file structure.
+ * @return 0 on success.
+ */
+static int device_open(struct inode *inode, struct file *file)
+{
+    printk(KERN_INFO "GPIO BUTTON: Device opened.\n");
     return 0;
 }
 
-// Inicialización del módulo
-static int __init cdd_init(void)
+/**
+ * @brief Device release function.
+ *
+ * This function is called when the device file is closed.
+ *
+ * @param inode Pointer to the inode structure.
+ * @param file Pointer to the file structure.
+ * @return 0 on success.
+ */
+static int device_release(struct inode *inode, struct file *file)
+{
+    printk(KERN_INFO "GPIO BUTTON: Device closed.\n");
+    return 0;
+}
+
+/**
+ * @brief Module initialization function.
+ *
+ * This function is called when the module is loaded. It initializes the
+ * GPIO registers and registers the character device.
+ *
+ * @return 0 on success, or a negative error code on failure.
+ */
+static int __init gpio_button_init(void)
 {
     int result;
 
+    printk(KERN_INFO "GPIO BUTTON: Initializing.\n");
+
+    // Map GPIO memory
+    gpio_registers = (unsigned int *)ioremap(BCM2837_GPIO_ADDRESS, PAGE_SIZE);
+    if (!gpio_registers)
+    {
+        printk(KERN_ALERT "GPIO BUTTON: Failed to map GPIO memory.\n");
+        return -ENOMEM;
+    }
+
+    printk(KERN_INFO "GPIO BUTTON: Successfully mapped GPIO memory.\n");
+
+    // Set GPIO_BUTTON as input
     if (!gpio_is_valid(GPIO_BUTTON))
     {
-        printk(KERN_INFO "GPIO %d no es válido\n", GPIO_BUTTON);
+        printk(KERN_ALERT "GPIO BUTTON: Invalid GPIO pin.\n");
+        iounmap(gpio_registers);
         return -ENODEV;
     }
 
-    // Configura el GPIO como entrada
-    if (gpio_request(GPIO_BUTTON, "sysfs") < 0)
-    {
-        printk(KERN_INFO "Error al solicitar GPIO %d\n", GPIO_BUTTON);
-        return -ENODEV;
-    }
+    gpio_request(GPIO_BUTTON, "sysfs");
     gpio_direction_input(GPIO_BUTTON);
     gpio_set_debounce(GPIO_BUTTON, 200);
     gpio_export(GPIO_BUTTON, false);
 
-    // Registra la interrupción
-    interrupt_number = gpio_to_irq(GPIO_BUTTON);
-    result = request_irq(interrupt_number, button_isr, IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING, "button_gpio_handler", NULL);
+    // Register interrupt handler
+    irq_number = gpio_to_irq(GPIO_BUTTON);
+    result = request_irq(irq_number, (irq_handler_t) button_isr, IRQF_TRIGGER_RISING, DEVICE_NAME, NULL);
     if (result)
     {
-        printk(KERN_INFO "Error al solicitar interrupción %d\n", interrupt_number);
-        gpio_unexport(GPIO_BUTTON);
+        printk(KERN_ALERT "GPIO BUTTON: Failed to request IRQ.\n");
         gpio_free(GPIO_BUTTON);
+        iounmap(gpio_registers);
         return result;
     }
 
-    // Crea el hilo del kernel
-    task_thread = kthread_run(signal_thread_task, NULL, "signal_thread_task");
-    if (IS_ERR(task_thread))
+    // Register character device
+    major_number = register_chrdev(0, DEVICE_NAME, &fops);
+    if (major_number < 0)
     {
-        printk(KERN_INFO "Error al crear el hilo del kernel\n");
-        free_irq(interrupt_number, NULL);
-        gpio_unexport(GPIO_BUTTON);
+        printk(KERN_ALERT "GPIO BUTTON: Failed to register a major number.\n");
+        free_irq(irq_number, NULL);
         gpio_free(GPIO_BUTTON);
-        return PTR_ERR(task_thread);
+        iounmap(gpio_registers);
+        return major_number;
     }
 
-    printk(KERN_INFO "Módulo CDD cargado\n");
+    printk(KERN_INFO "GPIO BUTTON: Registered correctly with major number %d.\n", major_number);
     return 0;
 }
 
-// Función de descarga del módulo
-static void __exit cdd_exit(void)
+/**
+ * @brief Module exit function.
+ *
+ * This function is called when the module is unloaded. It unregisters the
+ * character device and unmaps the GPIO memory.
+ */
+static void __exit gpio_button_exit(void)
 {
-    kthread_stop(task_thread);
-    free_irq(interrupt_number, NULL);
+    free_irq(irq_number, NULL);
     gpio_unexport(GPIO_BUTTON);
     gpio_free(GPIO_BUTTON);
-    printk(KERN_INFO "Módulo CDD descargado\n");
+    iounmap(gpio_registers);
+    unregister_chrdev(major_number, DEVICE_NAME);
+    printk(KERN_INFO "GPIO BUTTON: Module unloaded.\n");
 }
 
-module_init(cdd_init);
-module_exit(cdd_exit);
-
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Franco Rodriguez, Mauricio Valdez, Bruno Guglielmotti");
-MODULE_DESCRIPTION("Módulo de kernel para manejo de botón con interrupciones y hilo del kernel");
+MODULE_AUTHOR("Tu Nombre");
+MODULE_DESCRIPTION("A simple GPIO INPUT driver for Raspberry Pi to detect button press");
 MODULE_VERSION("1.0");
+
+module_init(gpio_button_init);
+module_exit(gpio_button_exit);
