@@ -53,7 +53,12 @@ Cualquier driver de Linux consta de un constructor y un destructor. El construct
 
 Estas macros garantizan que el constructor y el destructor del módulo se registren correctamente con el kernel para su ejecución en los momentos adecuados.
 
-## Desarrollo
+## Desarrollo de un Character Device Driver
+
+Para poder comenzar a desarrollar nuestro driver necesitamos un dispositivo que oficie de, justamente, device, así que elegimos una Raspberry pi 3 model B, la cual tiene de sistema operativo a Raspberry Pi So 64 bits (anteriormente conocido como Debian)
+
+
+
 
 
  
