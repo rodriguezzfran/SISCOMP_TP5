@@ -1,31 +1,10 @@
-# Makefile for GPIO button driver
+obj-m += CDD.o
+KDIR = /lib/modules/$(shell uname -r)/build
 
-# Compiler
-CC := gcc
+all: kernel_module
 
-# Flags
-CFLAGS := -Wall
-
-# Module name
-MODULE_NAME := CDD
-
-# Source files
-SRC := $(MODULE_NAME).c
-
-# Object files
-OBJ := $(SRC:.c=.o)
-
-# Targets
-all: $(MODULE_NAME).ko
-
-$(MODULE_NAME).ko: $(OBJ)
-	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
-
-$(OBJ): $(SRC)
-	$(CC) $(CFLAGS) -c $< -o $@
+kernel_module:
+	make -C $(KDIR) M=$(shell pwd) modules
 
 clean:
-	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
-	rm -f $(OBJ)
-
-.PHONY: all clean
+	make -C $(KDIR) M=$(shell pwd) clean

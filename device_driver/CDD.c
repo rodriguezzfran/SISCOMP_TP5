@@ -158,8 +158,8 @@ static int __init gpio_button_init(void)
 
     gpio_request(GPIO_BUTTON, "sysfs");
     gpio_direction_input(GPIO_BUTTON);
-    gpio_set_debounce(GPIO_BUTTON, 200);
-    gpio_export(GPIO_BUTTON, false);
+    gpiod_set_debounce(GPIO_BUTTON, 200);
+    gpiod_export(GPIO_BUTTON, false);
 
     // Register interrupt handler
     irq_number = gpio_to_irq(GPIO_BUTTON);
@@ -196,7 +196,7 @@ static int __init gpio_button_init(void)
 static void __exit gpio_button_exit(void)
 {
     free_irq(irq_number, NULL);
-    gpio_unexport(GPIO_BUTTON);
+    gpiod_unexport(GPIO_BUTTON);
     gpio_free(GPIO_BUTTON);
     iounmap(gpio_registers);
     unregister_chrdev(major_number, DEVICE_NAME);
