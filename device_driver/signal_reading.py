@@ -25,7 +25,7 @@ def read_signal():
 def set_signal(signal):
     global selected_signal
     selected_signal = signal
-    with open('/dev/CDD_GPIO_SIGNAL', 'w') as f:
+    with open('/dev/CDD_GPIO_BUTTON', 'w') as f:
         f.write(str(signal))
 
 # Function to update the plot
