@@ -125,7 +125,6 @@ static void gpio_pin_input(unsigned int pin)
 // Module initialization function
 static int __init gpio_signal_init(void)
 {
-    int result;
 
     printk(KERN_INFO "GPIO SIGNAL: Initializing.\n");
 
