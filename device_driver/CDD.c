@@ -7,7 +7,7 @@
 #include <linux/timer.h>
 
 #define DEVICE_NAME "CDD_GPIO_BUTTON"
-#define GPIO_SIGNAL1 17
+#define GPIO_SIGNAL1 22
 #define GPIO_SIGNAL2 27
 #define BCM2837_GPIO_ADDRESS 0x3F200000
 
@@ -116,21 +116,6 @@ static int __init gpio_signal_init(void)
     if (!gpio_is_valid(GPIO_SIGNAL1) || !gpio_is_valid(GPIO_SIGNAL2))
     {
         printk(KERN_ALERT "GPIO SIGNAL: Invalid GPIO pin.\n");
-        iounmap(gpio_registers);
-        return -ENODEV;
-    }
-
-    if (gpio_request(GPIO_SIGNAL1, "sysfs"))
-    {
-        printk(KERN_ALERT "GPIO SIGNAL: Failed to request GPIO 1 pins.\n");
-        iounmap(gpio_registers);
-        return -ENODEV;
-    }
-
-    if (gpio_request(GPIO_SIGNAL2, "sysfs"))
-    {
-        printk(KERN_ALERT "GPIO SIGNAL: Failed to request GPIO 2 pins.\n");
-        gpio_free(GPIO_SIGNAL1);
         iounmap(gpio_registers);
         return -ENODEV;
     }
