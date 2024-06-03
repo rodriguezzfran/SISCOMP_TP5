@@ -97,10 +97,10 @@ static ssize_t device_write(struct file *file, const char *buffer, size_t len, l
         return -EFAULT;
 
     if (kbuf[0] == '1') {
-        selected_signal = GPIO_SIGNAL1;
+        selected_signal = gpio_pin1;
         printk(KERN_INFO "GPIO SIGNAL: Selected GPIO %d.\n", GPIO_SIGNAL1);
     } else if (kbuf[0] == '2') {
-        selected_signal = GPIO_SIGNAL2;
+        selected_signal = gpio_pin2;
         printk(KERN_INFO "GPIO SIGNAL: Selected GPIO %d.\n", GPIO_SIGNAL2);
     }
 
