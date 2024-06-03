@@ -6,7 +6,7 @@
 #include <linux/gpio.h>
 #include <linux/timer.h>
 
-#define DEVICE_NAME "CDD_GPIO_BUTTOM"
+#define DEVICE_NAME "CDD_GPIO_BUTTON"
 #define GPIO_SIGNAL1 17
 #define GPIO_SIGNAL2 27
 #define BCM2837_GPIO_ADDRESS 0x3F200000
@@ -22,7 +22,7 @@ static void sample_signal(struct timer_list *timer);
 
 // Global variables
 static int major_number = 0;
-static unsigned int *gpio_registers = NULL;
+static void __iomem *gpio_registers = NULL;
 static int selected_signal = GPIO_SIGNAL1;
 static int signal_value = 0;
 static struct timer_list signal_timer;
@@ -104,7 +104,7 @@ static int __init gpio_signal_init(void)
 
     printk(KERN_INFO "GPIO SIGNAL: Initializing.\n");
 
-    gpio_registers = (unsigned int *)ioremap(BCM2837_GPIO_ADDRESS, PAGE_SIZE);
+    gpio_registers = ioremap(BCM2837_GPIO_ADDRESS, PAGE_SIZE);
     if (!gpio_registers)
     {
         printk(KERN_ALERT "GPIO SIGNAL: Failed to map GPIO memory.\n");
@@ -127,7 +127,7 @@ static int __init gpio_signal_init(void)
         return -ENODEV;
     }
 
-    if(gpio_request(GPIO_SIGNAL2, "sysfs"))
+    if (gpio_request(GPIO_SIGNAL2, "sysfs"))
     {
         printk(KERN_ALERT "GPIO SIGNAL: Failed to request GPIO 2 pins.\n");
         gpio_free(GPIO_SIGNAL1);
