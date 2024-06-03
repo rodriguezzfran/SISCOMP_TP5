@@ -51,7 +51,7 @@ static void sample_signal(struct timer_list *timer)
 }
 
 // Device read function
-sstatic ssize_t device_read(struct file *file, char *buffer, size_t len, loff_t *offset)
+static ssize_t device_read(struct file *file, char *buffer, size_t len, loff_t *offset)
 {
     unsigned int gpio_value;
     char value_str[3];
