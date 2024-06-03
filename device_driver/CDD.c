@@ -6,7 +6,7 @@
 #include <linux/gpio.h>
 #include <linux/timer.h>
 
-#define DEVICE_NAME "CDD_GPIO_SIGNAL"
+#define DEVICE_NAME "CDD_GPIO_BUTTOM"
 #define GPIO_SIGNAL1 17
 #define GPIO_SIGNAL2 27
 #define BCM2837_GPIO_ADDRESS 0x3F200000
