@@ -120,9 +120,17 @@ static int __init gpio_signal_init(void)
         return -ENODEV;
     }
 
-    if (gpio_request(GPIO_SIGNAL1, "sysfs") || gpio_request(GPIO_SIGNAL2, "sysfs"))
+    if (gpio_request(GPIO_SIGNAL1, "sysfs"))
     {
-        printk(KERN_ALERT "GPIO SIGNAL: Failed to request GPIO pins.\n");
+        printk(KERN_ALERT "GPIO SIGNAL: Failed to request GPIO 1 pins.\n");
+        iounmap(gpio_registers);
+        return -ENODEV;
+    }
+
+    if(gpio_request(GPIO_SIGNAL2, "sysfs"))
+    {
+        printk(KERN_ALERT "GPIO SIGNAL: Failed to request GPIO 2 pins.\n");
+        gpio_free(GPIO_SIGNAL1);
         iounmap(gpio_registers);
         return -ENODEV;
     }
