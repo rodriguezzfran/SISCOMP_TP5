@@ -1,8 +1,8 @@
 /**
  * gpio-button.c - A simple GPIO INPUT driver for Raspberry Pi
  * 
- * This CDD Raspberry Pi driver allows to detect a button press on a specific GPIO pin (pin 17)
- * and show a message every time the button is pressed.
+ * This CDD Raspberry Pi driver allows to detect a button press on specific GPIO pins (pin 17 and pin 27)
+ * and show a message every time a button is pressed.
  */
 
 #include <linux/module.h>
@@ -14,7 +14,8 @@
 #include <linux/gpio.h>
 
 #define DEVICE_NAME "gpio-button"
-#define GPIO_BUTTON 17
+#define GPIO_BUTTON1 17
+#define GPIO_BUTTON2 27
 
 // Define GPIO base addresses
 #define BCM2837_GPIO_ADDRESS 0x3F200000
@@ -30,20 +31,21 @@ static void __exit gpio_button_exit(void);
 // Global variables
 static int major_number             = 0;
 static unsigned int *gpio_registers = NULL;
-static int irq_number;
-static int button_pressed           = 0;
+static int irq_number1, irq_number2;
+static int button_pressed1          = 0;
+static int button_pressed2          = 0;
 
 // File operations structure (needed for character device)
 static struct file_operations fops = {
-	.open       = device_open,
-	.release    = device_release,
-	.read       = device_read,
+    .open       = device_open,
+    .release    = device_release,
+    .read       = device_read,
 };
 
 /**
  * @brief Interrupt Service Routine for the button press.
  * 
- * This function is called when the button connected to GPIO_BUTTON is pressed.
+ * This function is called when the button connected to GPIO_BUTTON1 or GPIO_BUTTON2 is pressed.
  * 
  * @param irq Interrupt number.
  * @param data Pointer to the data (not used here).
@@ -51,8 +53,13 @@ static struct file_operations fops = {
  */
 static irqreturn_t button_isr(int irq, void *data)
 {
-    button_pressed = 1;
-    printk(KERN_INFO "GPIO BUTTON: Button pressed.\n");
+    if (irq == irq_number1) {
+        button_pressed1 = 1;
+        printk(KERN_INFO "GPIO BUTTON: Button 1 pressed.\n");
+    } else if (irq == irq_number2) {
+        button_pressed2 = 1;
+        printk(KERN_INFO "GPIO BUTTON: Button 2 pressed.\n");
+    }
     return IRQ_HANDLED;
 }
 
@@ -69,13 +76,14 @@ static irqreturn_t button_isr(int irq, void *data)
  */
 static ssize_t device_read(struct file *file, char *buffer, size_t len, loff_t *offset)
 {
-    char value_str[3];
+    char value_str[10];
     size_t value_str_len;
 
-    // Write the current button state (1 or 0) to value_str
-    snprintf(value_str, sizeof(value_str), "%d\n", button_pressed);
+    // Write the current button states (1 or 0) to value_str
+    snprintf(value_str, sizeof(value_str), "%d %d\n", button_pressed1, button_pressed2);
     value_str_len = strlen(value_str);
-    button_pressed = 0; // Reset button pressed state after reading
+    button_pressed1 = 0; // Reset button pressed state after reading
+    button_pressed2 = 0; // Reset button pressed state after reading
 
     // If offset is greater than or equal to the length of the string, return 0
     if (*offset >= value_str_len)
@@ -148,26 +156,45 @@ static int __init gpio_button_init(void)
 
     printk(KERN_INFO "GPIO BUTTON: Successfully mapped GPIO memory.\n");
 
-    // Set GPIO_BUTTON as input
-    if (!gpio_is_valid(GPIO_BUTTON))
+    // Set GPIO_BUTTON1 and GPIO_BUTTON2 as input
+    if (!gpio_is_valid(GPIO_BUTTON1) || !gpio_is_valid(GPIO_BUTTON2))
     {
         printk(KERN_ALERT "GPIO BUTTON: Invalid GPIO pin.\n");
         iounmap(gpio_registers);
         return -ENODEV;
     }
 
-    gpio_request(GPIO_BUTTON, "sysfs");
-    gpio_direction_input(GPIO_BUTTON);
-    gpiod_set_debounce(GPIO_BUTTON, 200);
-    gpiod_export(GPIO_BUTTON, false);
+    gpio_request(GPIO_BUTTON1, "sysfs");
+    gpio_direction_input(GPIO_BUTTON1);
+    gpiod_set_debounce(GPIO_BUTTON1, 200);
+    gpiod_export(GPIO_BUTTON1, false);
 
-    // Register interrupt handler
-    irq_number = gpio_to_irq(GPIO_BUTTON);
-    result = request_irq(irq_number, (irq_handler_t) button_isr, IRQF_TRIGGER_RISING, DEVICE_NAME, NULL);
+    gpio_request(GPIO_BUTTON2, "sysfs");
+    gpio_direction_input(GPIO_BUTTON2);
+    gpiod_set_debounce(GPIO_BUTTON2, 200);
+    gpiod_export(GPIO_BUTTON2, false);
+
+    // Register interrupt handlers
+    irq_number1 = gpio_to_irq(GPIO_BUTTON1);
+    irq_number2 = gpio_to_irq(GPIO_BUTTON2);
+
+    result = request_irq(irq_number1, (irq_handler_t) button_isr, IRQF_TRIGGER_RISING, DEVICE_NAME, NULL);
     if (result)
     {
-        printk(KERN_ALERT "GPIO BUTTON: Failed to request IRQ.\n");
-        gpio_free(GPIO_BUTTON);
+        printk(KERN_ALERT "GPIO BUTTON: Failed to request IRQ for GPIO_BUTTON1.\n");
+        gpio_free(GPIO_BUTTON1);
+        gpio_free(GPIO_BUTTON2);
+        iounmap(gpio_registers);
+        return result;
+    }
+
+    result = request_irq(irq_number2, (irq_handler_t) button_isr, IRQF_TRIGGER_RISING, DEVICE_NAME, NULL);
+    if (result)
+    {
+        printk(KERN_ALERT "GPIO BUTTON: Failed to request IRQ for GPIO_BUTTON2.\n");
+        free_irq(irq_number1, NULL);
+        gpio_free(GPIO_BUTTON1);
+        gpio_free(GPIO_BUTTON2);
         iounmap(gpio_registers);
         return result;
     }
@@ -177,8 +204,10 @@ static int __init gpio_button_init(void)
     if (major_number < 0)
     {
         printk(KERN_ALERT "GPIO BUTTON: Failed to register a major number.\n");
-        free_irq(irq_number, NULL);
-        gpio_free(GPIO_BUTTON);
+        free_irq(irq_number1, NULL);
+        free_irq(irq_number2, NULL);
+        gpio_free(GPIO_BUTTON1);
+        gpio_free(GPIO_BUTTON2);
         iounmap(gpio_registers);
         return major_number;
     }
@@ -195,9 +224,12 @@ static int __init gpio_button_init(void)
  */
 static void __exit gpio_button_exit(void)
 {
-    free_irq(irq_number, NULL);
-    gpiod_unexport(GPIO_BUTTON);
-    gpio_free(GPIO_BUTTON);
+    free_irq(irq_number1, NULL);
+    free_irq(irq_number2, NULL);
+    gpiod_unexport(GPIO_BUTTON1);
+    gpiod_unexport(GPIO_BUTTON2);
+    gpio_free(GPIO_BUTTON1);
+    gpio_free(GPIO_BUTTON2);
     iounmap(gpio_registers);
     unregister_chrdev(major_number, DEVICE_NAME);
     printk(KERN_INFO "GPIO BUTTON: Module unloaded.\n");
@@ -205,7 +237,7 @@ static void __exit gpio_button_exit(void)
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Tu Nombre");
-MODULE_DESCRIPTION("A simple GPIO INPUT driver for Raspberry Pi to detect button press");
+MODULE_DESCRIPTION("A simple GPIO INPUT driver for Raspberry Pi to detect button presses on multiple pins");
 MODULE_VERSION("1.0");
 
 module_init(gpio_button_init);
