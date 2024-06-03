@@ -115,6 +115,8 @@ static void gpio_pin_input(unsigned int pin)
     unsigned int fsel_bitpos	= pin % 10;
     unsigned int *gpio_fsel		= gpio_reg + fsel_index;
 
+    printk(KERN_INFO "GPIO SIGNAL: Setting up pin %d as input.\n", pin);
+
     *gpio_fsel	&=~	(7 << (fsel_bitpos * 3));	// Clear the bits for the pin
     *gpio_fsel	|=	(0 << (fsel_bitpos * 3));	// Set the pin as input
     
@@ -137,12 +139,12 @@ static int __init gpio_signal_init(void)
 
     printk(KERN_INFO "GPIO SIGNAL: Successfully mapped GPIO memory.\n");
 
-    if (!gpio_is_valid(GPIO_SIGNAL1) || !gpio_is_valid(GPIO_SIGNAL2))
-    {
-        printk(KERN_ALERT "GPIO SIGNAL: Invalid GPIO pin.\n");
-        iounmap(gpio_registers);
-        return -ENODEV;
-    }
+    // if (!gpio_is_valid(GPIO_SIGNAL1) || !gpio_is_valid(GPIO_SIGNAL2))
+    // {
+    //     printk(KERN_ALERT "GPIO SIGNAL: Invalid GPIO pin.\n");
+    //     iounmap(gpio_registers);
+    //     return -ENODEV;
+    // }
 
     gpio_pin_input(gpio_pin1);
 	gpio_pin_input(gpio_pin2);
