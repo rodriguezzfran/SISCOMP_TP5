@@ -16,7 +16,7 @@ signal_data = []
 def read_signal():
     global running, signal_data
     while running:
-        with open('/dev/CDD_GPIO_SIGNAL', 'r') as f:
+        with open('/dev/CDD_GPIO_BUTTON', 'r') as f:
             value = int(f.read().strip())
             signal_data.append(value)
         time.sleep(1)
