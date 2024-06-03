@@ -23,14 +23,13 @@ static void gpio_pin_input(unsigned int pin);
 
 // Global variables
 static int major_number = 0;
-static void __iomem *gpio_registers = NULL;
+static unsigned int *gpio_registers = NULL;
 static int selected_signal = GPIO_SIGNAL1;
 static int signal_value = 0;
 static struct timer_list signal_timer;
 
 static int gpio_pin1 = GPIO_SIGNAL1;
 static int gpio_pin2 = GPIO_SIGNAL2;
-static unsigned int *gpio_reg = NULL;
 
 // File operations structure (needed for character device)
 static struct file_operations fops = {
@@ -113,7 +112,7 @@ static void gpio_pin_input(unsigned int pin)
 {
     unsigned int fsel_index		= pin / 10;
     unsigned int fsel_bitpos	= pin % 10;
-    unsigned int *gpio_fsel		= gpio_reg + fsel_index;
+    unsigned int *gpio_fsel		= gpio_registers + fsel_index;
 
     printk(KERN_INFO "GPIO SIGNAL: Setting up pin %d as input.\n", pin);
 
