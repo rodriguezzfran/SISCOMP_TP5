@@ -13,7 +13,7 @@
 #include <linux/interrupt.h>
 #include <linux/gpio.h>
 
-#define DEVICE_NAME "gpio-button"
+#define DEVICE_NAME "CDD_GPIO_BUTTON"
 #define GPIO_BUTTON1 17
 #define GPIO_BUTTON2 27
 
@@ -236,7 +236,7 @@ static void __exit gpio_button_exit(void)
 }
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Tu Nombre");
+MODULE_AUTHOR("Franco Rodriguez, Mauricio Valdez, Bruno Guglielmotti");
 MODULE_DESCRIPTION("A simple GPIO INPUT driver for Raspberry Pi to detect button presses on multiple pins");
 MODULE_VERSION("1.0");
 
