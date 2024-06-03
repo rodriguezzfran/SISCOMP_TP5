@@ -109,12 +109,14 @@ static int __init gpio_device_init(void) {
         return ret;
     }
 
-    if (IS_ERR(cl = class_create(THIS_MODULE, "chardrv"))) {
+    cl = class_create(THIS_MODULE, "chardrv");
+    if (IS_ERR(cl)) {
         unregister_chrdev_region(first, 1);
         return PTR_ERR(cl);
     }
 
-    if (IS_ERR(dev_ret = device_create(cl, NULL, first, NULL, DEVICE_NAME))) {
+    dev_ret = device_create(cl, NULL, first, NULL, DEVICE_NAME);
+    if (IS_ERR(dev_ret)) {
         class_destroy(cl);
         unregister_chrdev_region(first, 1);
         return PTR_ERR(dev_ret);
