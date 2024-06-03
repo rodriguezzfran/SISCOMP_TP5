@@ -7,7 +7,7 @@ import time
 
 # Leer desde el archivo del dispositivo en /dev/signal-detect
 def read_driver_file():
-    with open('/dev/gpio-button', 'r') as file:
+    with open('/dev/CDD_GPIO_BUTTON', 'r') as file:
         data = file.read().strip()
     # Suponemos que el archivo contiene dos valores separados por espacio
     signal1, signal2 = map(int, data.split())
