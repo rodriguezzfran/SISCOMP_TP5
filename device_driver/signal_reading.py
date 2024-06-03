@@ -1,87 +1,101 @@
 import tkinter as tk
 from tkinter import ttk
-import time
-import threading
-import os
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import numpy as np
+import threading
+import time
+import os
 
-# Global variables
-running = True
-selected_signal = 1
-signal_data = []
+class GPIOApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Real-Time GPIO Signal Plotter")
+        self.signal_pin = 1
+        self.running = False
 
-# Function to read signal from the CDD
-def read_signal():
-    global running, signal_data
-    while running:
-        with open('/dev/CDD_GPIO_BUTTON', 'r') as f:
-            value = int(f.read().strip())
-            signal_data.append(value)
-        time.sleep(1)
+        self.create_widgets()
+        self.setup_plot()
 
-# Function to update the selected signal in the CDD
-def set_signal(signal):
-    global selected_signal
-    selected_signal = signal
-    with open('/dev/CDD_GPIO_BUTTON', 'w') as f:
-        f.write(str(signal))
+    def create_widgets(self):
+        frame = ttk.Frame(self.root)
+        frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
 
-# Function to update the plot
-def update_plot():
-    global signal_data
-    if len(signal_data) > 100:
-        signal_data = signal_data[-100:]
+        self.label = ttk.Label(frame, text="Select Signal:")
+        self.label.pack(side=tk.LEFT)
 
-    x = np.arange(len(signal_data))
-    y = np.array(signal_data)
+        self.signal_var = tk.StringVar(value="1")
+        self.signal_selector = ttk.Combobox(frame, textvariable=self.signal_var, values=["1", "2"])
+        self.signal_selector.pack(side=tk.LEFT, padx=5)
+        self.signal_selector.bind("<<ComboboxSelected>>", self.change_signal)
 
-    ax.clear()
-    ax.plot(x, y, label=f'Signal {selected_signal}')
-    ax.set_title(f'Signal {selected_signal} over Time')
-    ax.set_xlabel('Time (s)')
-    ax.set_ylabel('Signal Value')
-    ax.legend()
-    canvas.draw()
+        self.start_button = ttk.Button(frame, text="Start", command=self.start_plotting)
+        self.start_button.pack(side=tk.LEFT, padx=5)
 
-    if running:
-        root.after(1000, update_plot)
+        self.stop_button = ttk.Button(frame, text="Stop", command=self.stop_plotting, state=tk.DISABLED)
+        self.stop_button.pack(side=tk.LEFT, padx=5)
 
-# Function to handle signal selection from the GUI
-def on_signal_select(event):
-    signal = signal_selector.get()
-    set_signal(int(signal.split()[1]))
+    def setup_plot(self):
+        self.figure, self.ax = plt.subplots()
+        self.canvas = FigureCanvasTkAgg(self.figure, master=self.root)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self.ax.set_title("Real-Time GPIO Signal")
+        self.ax.set_xlabel("Time (s)")
+        self.ax.set_ylabel("Signal Value")
+        self.line, = self.ax.plot([], [])
 
-# Function to handle closing the application
-def on_closing():
-    global running
-    running = False
-    root.quit()
+    def change_signal(self, event=None):
+        self.signal_pin = int(self.signal_var.get())
+        self.ax.set_title(f"Real-Time GPIO Signal (Pin {self.signal_pin})")
+        self.reset_plot()
 
-# Initialize the main window
-root = tk.Tk()
-root.title("GPIO Signal Monitor")
+    def start_plotting(self):
+        self.running = True
+        self.start_button.config(state=tk.DISABLED)
+        self.stop_button.config(state=tk.NORMAL)
+        self.reset_plot()
+        self.plot_thread = threading.Thread(target=self.plot_signal)
+        self.plot_thread.start()
 
-# Create a dropdown to select the signal
-signal_selector = ttk.Combobox(root, values=["Signal 1", "Signal 2"])
-signal_selector.set("Signal 1")
-signal_selector.bind("<<ComboboxSelected>>", on_signal_select)
-signal_selector.pack(pady=10)
+    def stop_plotting(self):
+        self.running = False
+        self.start_button.config(state=tk.NORMAL)
+        self.stop_button.config(state=tk.DISABLED)
 
-# Create the matplotlib figure and axis
-fig, ax = plt.subplots()
-canvas = FigureCanvasTkAgg(fig, master=root)
-canvas.get_tk_widget().pack(fill=tk.BOTH, expand=1)
+    def reset_plot(self):
+        self.ax.clear()
+        self.ax.set_title(f"Real-Time GPIO Signal (Pin {self.signal_pin})")
+        self.ax.set_xlabel("Time (s)")
+        self.ax.set_ylabel("Signal Value")
+        self.line, = self.ax.plot([], [])
+        self.canvas.draw()
 
-# Start the thread to read the signal
-threading.Thread(target=read_signal, daemon=True).start()
+    def plot_signal(self):
+        data = []
+        start_time = time.time()
+        while self.running:
+            signal_value = self.read_signal(self.signal_pin)
+            current_time = time.time() - start_time
+            data.append((current_time, signal_value))
+            times, values = zip(*data)
+            self.line.set_xdata(times)
+            self.line.set_ydata(values)
+            self.ax.relim()
+            self.ax.autoscale_view()
+            self.canvas.draw()
+            time.sleep(1)
 
-# Start the periodic plot update
-root.after(1000, update_plot)
+    def read_signal(self, pin):
+        try:
+            with open(f"/dev/CDD_GPIO_BUTTON", "w") as f:
+                f.write(str(pin))
+            with open(f"/dev/CDD_GPIO_BUTTON", "r") as f:
+                signal_value = int(f.read().strip())
+        except Exception as e:
+            print(f"Error reading signal: {e}")
+            signal_value = 0
+        return signal_value
 
-# Handle window closing
-root.protocol("WM_DELETE_WINDOW", on_closing)
-
-# Start the Tkinter main loop
-root.mainloop()
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = GPIOApp(root)
+    root.mainloop()
