@@ -2,7 +2,7 @@
  
 make clean
 make
-sudo rmmod CDD_GPIO_BUTTON 2>/dev/null
+sudo rmmod CDD.ko 2>/dev/null
 sudo insmod CDD.ko
 echo "CDD_GPIO_BUTTON driver is loaded"
 MAJOR=$(awk '$2=="CDD.ko" {print $1}' /proc/devices)
