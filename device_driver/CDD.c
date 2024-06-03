@@ -38,7 +38,11 @@ static struct file_operations fops = {
 // Timer callback function to sample the selected signal
 static void sample_signal(struct timer_list *timer)
 {
-    signal_value = gpio_get_value(selected_signal);
+    int new_signal_value = gpio_get_value(selected_signal);
+    if (new_signal_value != signal_value) {
+        signal_value = new_signal_value;
+        printk(KERN_INFO "GPIO SIGNAL: Detected value %d on GPIO %d.\n", signal_value, selected_signal);
+    }
     mod_timer(&signal_timer, jiffies + HZ);
 }
 
@@ -75,10 +79,13 @@ static ssize_t device_write(struct file *file, const char *buffer, size_t len, l
     if (copy_from_user(kbuf, buffer, len))
         return -EFAULT;
 
-    if (kbuf[0] == '1')
+    if (kbuf[0] == '1') {
         selected_signal = GPIO_SIGNAL1;
-    else if (kbuf[0] == '2')
+        printk(KERN_INFO "GPIO SIGNAL: Selected GPIO %d.\n", GPIO_SIGNAL1);
+    } else if (kbuf[0] == '2') {
         selected_signal = GPIO_SIGNAL2;
+        printk(KERN_INFO "GPIO SIGNAL: Selected GPIO %d.\n", GPIO_SIGNAL2);
+    }
 
     return len;
 }
