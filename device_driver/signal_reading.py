@@ -1,96 +1,87 @@
 import tkinter as tk
 from tkinter import ttk
+import time
+import threading
+import os
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import threading
-import time
+import numpy as np
 
-# Leer desde el archivo del dispositivo en /dev/signal-detect
-def read_driver_file():
-    with open('/dev/CDD_GPIO_BUTTON', 'r') as file:
-        data = file.read().strip()
-    # Suponemos que el archivo contiene dos valores separados por espacio
-    signal1, signal2 = map(int, data.split())
-    return signal1, signal2
+# Global variables
+running = True
+selected_signal = 1
+signal_data = []
 
-class SignalApp(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title("Signal Viewer")
-        self.geometry("800x600")
-        
-        self.signal_option = tk.StringVar(value="Signal 1")
-        self.running = True
-        
-        self.create_widgets()
-        self.start_plotting_thread()
-    
-    def create_widgets(self):
-        # Frame para los botones de selección
-        control_frame = ttk.Frame(self)
-        control_frame.pack(side=tk.TOP, fill=tk.X)
+# Function to read signal from the CDD
+def read_signal():
+    global running, signal_data
+    while running:
+        with open('/dev/CDD_GPIO_SIGNAL', 'r') as f:
+            value = int(f.read().strip())
+            signal_data.append(value)
+        time.sleep(1)
 
-        ttk.Label(control_frame, text="Select Signal:").pack(side=tk.LEFT, padx=10, pady=10)
-        
-        self.signal1_button = ttk.Radiobutton(control_frame, text="Signal 1", variable=self.signal_option, value="Signal 1", command=self.reset_plot)
-        self.signal1_button.pack(side=tk.LEFT, padx=10, pady=10)
+# Function to update the selected signal in the CDD
+def set_signal(signal):
+    global selected_signal
+    selected_signal = signal
+    with open('/dev/CDD_GPIO_SIGNAL', 'w') as f:
+        f.write(str(signal))
 
-        self.signal2_button = ttk.Radiobutton(control_frame, text="Signal 2", variable=self.signal_option, value="Signal 2", command=self.reset_plot)
-        self.signal2_button.pack(side=tk.LEFT, padx=10, pady=10)
+# Function to update the plot
+def update_plot():
+    global signal_data
+    if len(signal_data) > 100:
+        signal_data = signal_data[-100:]
 
-        # Frame para la gráfica
-        self.fig, self.ax = plt.subplots()
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self)
-        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-        self.ax.set_xlabel('Time (s)')
-        self.ax.set_ylabel('Signal Value')
+    x = np.arange(len(signal_data))
+    y = np.array(signal_data)
 
-    def start_plotting_thread(self):
-        self.plot_thread = threading.Thread(target=self.update_plot, daemon=True)
-        self.plot_thread.start()
+    ax.clear()
+    ax.plot(x, y, label=f'Signal {selected_signal}')
+    ax.set_title(f'Signal {selected_signal} over Time')
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel('Signal Value')
+    ax.legend()
+    canvas.draw()
 
-    def update_plot(self):
-        x_data = []
-        y_data = []
+    if running:
+        root.after(1000, update_plot)
 
-        start_time = time.time()
+# Function to handle signal selection from the GUI
+def on_signal_select(event):
+    signal = signal_selector.get()
+    set_signal(int(signal.split()[1]))
 
-        while self.running:
-            current_time = time.time() - start_time
-            signal1, signal2 = read_driver_file()
+# Function to handle closing the application
+def on_closing():
+    global running
+    running = False
+    root.quit()
 
-            if self.signal_option.get() == "Signal 1":
-                y_value = signal1
-            else:
-                y_value = signal2
-            
-            x_data.append(current_time)
-            y_data.append(y_value)
+# Initialize the main window
+root = tk.Tk()
+root.title("GPIO Signal Monitor")
 
-            self.ax.clear()
-            self.ax.plot(x_data, y_data, label=self.signal_option.get())
-            self.ax.legend()
-            self.ax.set_xlabel('Time (s)')
-            self.ax.set_ylabel('Signal Value')
-            self.canvas.draw()
+# Create a dropdown to select the signal
+signal_selector = ttk.Combobox(root, values=["Signal 1", "Signal 2"])
+signal_selector.set("Signal 1")
+signal_selector.bind("<<ComboboxSelected>>", on_signal_select)
+signal_selector.pack(pady=10)
 
-            time.sleep(0.1)
+# Create the matplotlib figure and axis
+fig, ax = plt.subplots()
+canvas = FigureCanvasTkAgg(fig, master=root)
+canvas.get_tk_widget().pack(fill=tk.BOTH, expand=1)
 
-            # Limitar la longitud de los datos para no sobrecargar la gráfica
-            if len(x_data) > 100:
-                x_data.pop(0)
-                y_data.pop(0)
+# Start the thread to read the signal
+threading.Thread(target=read_signal, daemon=True).start()
 
-    def reset_plot(self):
-        self.ax.clear()
-        self.canvas.draw()
+# Start the periodic plot update
+root.after(1000, update_plot)
 
-    def on_closing(self):
-        self.running = False
-        self.plot_thread.join()
-        self.destroy()
+# Handle window closing
+root.protocol("WM_DELETE_WINDOW", on_closing)
 
-if __name__ == "__main__":
-    app = SignalApp()
-    app.protocol("WM_DELETE_WINDOW", app.on_closing)
-    app.mainloop()
+# Start the Tkinter main loop
+root.mainloop()
