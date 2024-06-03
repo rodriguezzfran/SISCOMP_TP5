@@ -19,6 +19,7 @@ static ssize_t device_write(struct file *file, const char *buffer, size_t len, l
 static int __init gpio_signal_init(void);
 static void __exit gpio_signal_exit(void);
 static void sample_signal(struct timer_list *timer);
+static void gpio_pin_input(unsigned int pin);
 
 // Global variables
 static int major_number = 0;
@@ -26,6 +27,10 @@ static void __iomem *gpio_registers = NULL;
 static int selected_signal = GPIO_SIGNAL1;
 static int signal_value = 0;
 static struct timer_list signal_timer;
+
+static int gpio_pin1 = GPIO_SIGNAL1;
+static int gpio_pin2 = GPIO_SIGNAL2;
+static unsigned int *gpio_reg = NULL;
 
 // File operations structure (needed for character device)
 static struct file_operations fops = {
@@ -104,6 +109,18 @@ static int device_release(struct inode *inode, struct file *file)
     return 0;
 }
 
+static void gpio_pin_input(unsigned int pin)
+{
+    unsigned int fsel_index		= pin / 10;
+    unsigned int fsel_bitpos	= pin % 10;
+    unsigned int *gpio_fsel		= gpio_reg + fsel_index;
+
+    *gpio_fsel	&=~	(7 << (fsel_bitpos * 3));	// Clear the bits for the pin
+    *gpio_fsel	|=	(0 << (fsel_bitpos * 3));	// Set the pin as input
+    
+    printk(KERN_INFO "GPIO SIGNAL: Pin %d set up as input.\n", pin);
+}
+
 // Module initialization function
 static int __init gpio_signal_init(void)
 {
@@ -127,8 +144,8 @@ static int __init gpio_signal_init(void)
         return -ENODEV;
     }
 
-    gpio_direction_input(GPIO_SIGNAL1);
-    gpio_direction_input(GPIO_SIGNAL2);
+    gpio_pin_input(gpio_pin1);
+	gpio_pin_input(gpio_pin2);
 
     // Register character device
     major_number = register_chrdev(0, DEVICE_NAME, &fops);
