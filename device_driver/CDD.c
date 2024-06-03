@@ -58,7 +58,7 @@ static ssize_t device_read(struct file *file, char *buffer, size_t len, loff_t *
     size_t value_str_len;
 
     // Read the value of the GPIO pin
-    gpio_value = (*(gpio_registers + 13) & (1 << selected_pin)) != 0;
+    gpio_value = (*(gpio_registers + 13) & (1 << selected_signal)) != 0;
 
     // Convert the GPIO value to a string ("0\n" or "1\n")
     snprintf(value_str, sizeof(value_str), "%d\n", gpio_value);
