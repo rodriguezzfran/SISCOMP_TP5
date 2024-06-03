@@ -1,177 +1,163 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/fs.h>
-#include <linux/uaccess.h>
-#include <linux/io.h>
 #include <linux/gpio.h>
+#include <linux/uaccess.h>
+#include <linux/cdev.h>
 #include <linux/timer.h>
 
 #define DEVICE_NAME "CDD_GPIO_BUTTON"
-#define GPIO_SIGNAL1 17
-#define GPIO_SIGNAL2 27
-#define BCM2837_GPIO_ADDRESS 0x3F200000
+#define BUFFER_SIZE 256
 
-// Function prototypes
-static int device_open(struct inode *inode, struct file *file);
-static int device_release(struct inode *inode, struct file *file);
-static ssize_t device_read(struct file *file, char *buffer, size_t len, loff_t *offset);
-static ssize_t device_write(struct file *file, const char *buffer, size_t len, loff_t *offset);
-static int __init gpio_signal_init(void);
-static void __exit gpio_signal_exit(void);
-static void sample_signal(struct timer_list *timer);
+static dev_t first;       
+static struct cdev c_dev; 
+static struct class *cl;  
 
-// Global variables
-static int major_number = 0;
-static void __iomem *gpio_registers = NULL;
-static int selected_signal = GPIO_SIGNAL1;
-static int signal_value = 0;
-static struct timer_list signal_timer;
+static char message[BUFFER_SIZE] = {0};
+static short message_size;
+static int selected_gpio = 17; // Pin GPIO seleccionado por defecto
+static int gpio_pin1 = 17;     
+static int gpio_pin2 = 21;     
 
-// File operations structure (needed for character device)
+static struct timer_list timer;
+static int gpio_value;
+static bool timer_started = false;
+
+// Función del temporizador para leer el GPIO cada segundo
+static void timer_callback(struct timer_list *t) {
+    gpio_value = gpio_get_value(selected_gpio);
+    mod_timer(&timer, jiffies + HZ);
+}
+
+// Función de apertura del dispositivo
+static int device_open(struct inode *inode, struct file *file) {
+    printk(KERN_INFO "Dispositivo abierto.\n");
+    if (!timer_started) {
+        timer_started = true;
+        timer_setup(&timer, timer_callback, 0);
+        mod_timer(&timer, jiffies + HZ);
+    }
+    return 0;
+}
+
+// Función de liberación del dispositivo
+static int device_release(struct inode *inode, struct file *file) {
+    printk(KERN_INFO "Dispositivo cerrado.\n");
+    return 0;
+}
+
+// Función de lectura del dispositivo
+static ssize_t device_read(struct file *file, char *buffer, size_t length, loff_t *offset) {
+    char gpio_value_str[2];
+    memset(message, 0, sizeof(message));  
+    sprintf(gpio_value_str, "%d", gpio_value);
+    strcat(message, gpio_value_str);
+    strcat(message, "\n");
+
+    message_size = strlen(message);
+
+    if (*offset >= message_size)
+        return 0;
+
+    if (length > message_size - *offset)
+        length = message_size - *offset;
+
+    if (copy_to_user(buffer, message + *offset, length) != 0)
+        return -EFAULT;
+
+    *offset += length;
+    return length;
+}
+
+// Función de escritura en el dispositivo
+static ssize_t device_write(struct file *file, const char *buffer, size_t length, loff_t *offset) {
+    char command[BUFFER_SIZE];
+    if (copy_from_user(command, buffer, length) != 0)
+        return -EFAULT;
+
+    if (length > 0) {
+        if (strncmp(command, "select 1", 8) == 0) {
+            selected_gpio = gpio_pin1;
+            printk(KERN_INFO "GPIO 17 seleccionado.\n");
+        } else if (strncmp(command, "select 2", 8) == 0) {
+            selected_gpio = gpio_pin2;
+            printk(KERN_INFO "GPIO 21 seleccionado.\n");
+        } else {
+            printk(KERN_INFO "Comando no válido.\n");
+        }
+    }
+    return length;
+}
+
+// Estructura de operaciones del dispositivo
 static struct file_operations fops = {
     .open = device_open,
     .release = device_release,
     .read = device_read,
-    .write = device_write,
+    .write = device_write
 };
 
-// Timer callback function to sample the selected signal
-static void sample_signal(struct timer_list *timer)
-{
-    signal_value = gpio_get_value(selected_signal);
-    mod_timer(&signal_timer, jiffies + HZ);
-}
+// Función de inicialización del módulo
+static int __init gpio_device_init(void) {
+    int ret;
+    struct device *dev_ret;
 
-// Device read function
-static ssize_t device_read(struct file *file, char *buffer, size_t len, loff_t *offset)
-{
-    char value_str[10];
-    size_t value_str_len;
+    printk(KERN_INFO "Inicializando módulo de dispositivo GPIO.\n");
 
-    snprintf(value_str, sizeof(value_str), "%d\n", signal_value);
-    value_str_len = strlen(value_str);
-
-    if (*offset >= value_str_len)
-        return 0;
-
-    if (len > value_str_len - *offset)
-        len = value_str_len - *offset;
-
-    if (copy_to_user(buffer, value_str + *offset, len))
-        return -EFAULT;
-
-    *offset += len;
-    return len;
-}
-
-// Device write function to select the signal
-static ssize_t device_write(struct file *file, const char *buffer, size_t len, loff_t *offset)
-{
-    char kbuf[2];
-
-    if (len > 1)
-        len = 1;
-
-    if (copy_from_user(kbuf, buffer, len))
-        return -EFAULT;
-
-    if (kbuf[0] == '1')
-        selected_signal = GPIO_SIGNAL1;
-    else if (kbuf[0] == '2')
-        selected_signal = GPIO_SIGNAL2;
-
-    return len;
-}
-
-// Device open function
-static int device_open(struct inode *inode, struct file *file)
-{
-    printk(KERN_INFO "GPIO SIGNAL: Device opened.\n");
-    return 0;
-}
-
-// Device release function
-static int device_release(struct inode *inode, struct file *file)
-{
-    printk(KERN_INFO "GPIO SIGNAL: Device closed.\n");
-    return 0;
-}
-
-// Module initialization function
-static int __init gpio_signal_init(void)
-{
-    int result;
-
-    printk(KERN_INFO "GPIO SIGNAL: Initializing.\n");
-
-    gpio_registers = ioremap(BCM2837_GPIO_ADDRESS, PAGE_SIZE);
-    if (!gpio_registers)
-    {
-        printk(KERN_ALERT "GPIO SIGNAL: Failed to map GPIO memory.\n");
-        return -ENOMEM;
+    if ((ret = alloc_chrdev_region(&first, 0, 1, DEVICE_NAME)) < 0) {
+        printk(KERN_ALERT "Error al registrar el número principal de dispositivo.\n");
+        return ret;
     }
 
-    printk(KERN_INFO "GPIO SIGNAL: Successfully mapped GPIO memory.\n");
+    if (IS_ERR(cl = class_create(THIS_MODULE, "chardrv"))) {
+        unregister_chrdev_region(first, 1);
+        return PTR_ERR(cl);
+    }
 
-    if (!gpio_is_valid(GPIO_SIGNAL1) || !gpio_is_valid(GPIO_SIGNAL2))
-    {
-        printk(KERN_ALERT "GPIO SIGNAL: Invalid GPIO pin.\n");
-        iounmap(gpio_registers);
+    if (IS_ERR(dev_ret = device_create(cl, NULL, first, NULL, DEVICE_NAME))) {
+        class_destroy(cl);
+        unregister_chrdev_region(first, 1);
+        return PTR_ERR(dev_ret);
+    }
+
+    if (gpio_request(gpio_pin1, "GPIO_PIN1") < 0 || gpio_request(gpio_pin2, "GPIO_PIN2") < 0) {
+        device_destroy(cl, first);
+        class_destroy(cl);
+        unregister_chrdev_region(first, 1);
         return -ENODEV;
     }
 
-    if (gpio_request(GPIO_SIGNAL1, "sysfs"))
-    {
-        printk(KERN_ALERT "GPIO SIGNAL: Failed to request GPIO 1 pins.\n");
-        iounmap(gpio_registers);
-        return -ENODEV;
+    gpio_direction_input(gpio_pin1);
+    gpio_direction_input(gpio_pin2);
+
+    cdev_init(&c_dev, &fops);
+    if ((ret = cdev_add(&c_dev, first, 1)) < 0) {
+        gpio_free(gpio_pin1);
+        gpio_free(gpio_pin2);
+        device_destroy(cl, first);
+        class_destroy(cl);
+        unregister_chrdev_region(first, 1);
+        return ret;
     }
 
-    if (gpio_request(GPIO_SIGNAL2, "sysfs"))
-    {
-        printk(KERN_ALERT "GPIO SIGNAL: Failed to request GPIO 2 pins.\n");
-        gpio_free(GPIO_SIGNAL1);
-        iounmap(gpio_registers);
-        return -ENODEV;
-    }
-
-    gpio_direction_input(GPIO_SIGNAL1);
-    gpio_direction_input(GPIO_SIGNAL2);
-
-    // Register character device
-    major_number = register_chrdev(0, DEVICE_NAME, &fops);
-    if (major_number < 0)
-    {
-        printk(KERN_ALERT "GPIO SIGNAL: Failed to register a major number.\n");
-        gpio_free(GPIO_SIGNAL1);
-        gpio_free(GPIO_SIGNAL2);
-        iounmap(gpio_registers);
-        return major_number;
-    }
-
-    // Initialize timer for signal sampling
-    timer_setup(&signal_timer, sample_signal, 0);
-    mod_timer(&signal_timer, jiffies + HZ);
-
-    printk(KERN_INFO "GPIO SIGNAL: Registered correctly with major number %d.\n", major_number);
     return 0;
 }
 
-// Module exit function
-static void __exit gpio_signal_exit(void)
-{
-    del_timer(&signal_timer);
-    gpio_free(GPIO_SIGNAL1);
-    gpio_free(GPIO_SIGNAL2);
-    iounmap(gpio_registers);
-    unregister_chrdev(major_number, DEVICE_NAME);
-    printk(KERN_INFO "GPIO SIGNAL: Module unloaded.\n");
+// Función de limpieza del módulo
+static void __exit gpio_device_exit(void) {
+    cdev_del(&c_dev);
+    device_destroy(cl, first);
+    class_destroy(cl);
+    unregister_chrdev_region(first, 1);
+    gpio_free(gpio_pin1);
+    gpio_free(gpio_pin2);
+    del_timer(&timer);
+    printk(KERN_INFO "Módulo de dispositivo GPIO desregistrado.\n");
 }
+
+module_init(gpio_device_init);
+module_exit(gpio_device_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Franco Rodriguez, Mauricio Valdez, Bruno Guglielmotti");
-MODULE_DESCRIPTION("A simple GPIO INPUT driver for Raspberry Pi to sample signals");
-MODULE_VERSION("1.0");
-
-module_init(gpio_signal_init);
-module_exit(gpio_signal_exit);
+MODULE_AUTHOR("Internautas");
+MODULE_DESCRIPTION("Character device driver para control de GPIO en Raspberry Pi 3 model B");

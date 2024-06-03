@@ -1,87 +1,84 @@
+import time
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 import tkinter as tk
 from tkinter import ttk
-import time
-import threading
-import os
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import numpy as np
 
-# Global variables
-running = True
-selected_signal = 1
-signal_data = []
+DEVICE_PATH = '/dev/CDD_GPIO_BUTTON'
 
-# Function to read signal from the CDD
-def read_signal():
-    global running, signal_data
-    while running:
-        with open('/dev/CDD_GPIO_SIGNAL', 'r') as f:
-            value = int(f.read().strip())
-            signal_data.append(value)
-        time.sleep(1)
+# Función para leer el valor GPIO desde el dispositivo
+def read_gpio():
+    with open(DEVICE_PATH, 'r') as device_file:
+        return int(device_file.read().strip())
 
-# Function to update the selected signal in the CDD
-def set_signal(signal):
-    global selected_signal
-    selected_signal = signal
-    with open('/dev/CDD_GPIO_SIGNAL', 'w') as f:
-        f.write(str(signal))
+# Función para seleccionar el GPIO
+def select_gpio(pin):
+    with open(DEVICE_PATH, 'w') as device_file:
+        if pin == 1:
+            device_file.write('select 1')
+        elif pin == 2:
+            device_file.write('select 2')
 
-# Function to update the plot
-def update_plot():
-    global signal_data
-    if len(signal_data) > 100:
-        signal_data = signal_data[-100:]
+# Inicializa la selección del GPIO
+pin = 1
+select_gpio(pin)
 
-    x = np.arange(len(signal_data))
-    y = np.array(signal_data)
+# Función para cambiar el GPIO seleccionado
+def change_gpio(new_pin):
+    global pin, xs, ys
+    if new_pin != pin:
+        pin = new_pin
+        select_gpio(pin)
+        xs, ys = [], []  # Limpia los datos de la gráfica
+        ax.set_title(f'GPIO {pin} Signal')
+        print(f'Switched to GPIO {pin}')
+
+# Función para animar la gráfica
+def animate(i, xs, ys):
+    signal = read_gpio()
+    xs.append(time.time() - start_time)
+    ys.append(signal)
+
+    xs = xs[-100:]
+    ys = ys[-100:]
 
     ax.clear()
-    ax.plot(x, y, label=f'Signal {selected_signal}')
-    ax.set_title(f'Signal {selected_signal} over Time')
-    ax.set_xlabel('Time (s)')
-    ax.set_ylabel('Signal Value')
-    ax.legend()
-    canvas.draw()
+    ax.plot(xs, ys)
 
-    if running:
-        root.after(1000, update_plot)
+    plt.xlabel('Time (s)')
+    plt.ylabel('Signal')
 
-# Function to handle signal selection from the GUI
-def on_signal_select(event):
-    signal = signal_selector.get()
-    set_signal(int(signal.split()[1]))
-
-# Function to handle closing the application
-def on_closing():
-    global running
-    running = False
-    root.quit()
-
-# Initialize the main window
-root = tk.Tk()
-root.title("GPIO Signal Monitor")
-
-# Create a dropdown to select the signal
-signal_selector = ttk.Combobox(root, values=["Signal 1", "Signal 2"])
-signal_selector.set("Signal 1")
-signal_selector.bind("<<ComboboxSelected>>", on_signal_select)
-signal_selector.pack(pady=10)
-
-# Create the matplotlib figure and axis
+# Configuración de la gráfica
 fig, ax = plt.subplots()
-canvas = FigureCanvasTkAgg(fig, master=root)
-canvas.get_tk_widget().pack(fill=tk.BOTH, expand=1)
+xs, ys = [], []
+start_time = time.time()
 
-# Start the thread to read the signal
-threading.Thread(target=read_signal, daemon=True).start()
+ani = animation.FuncAnimation(fig, animate, fargs=(xs, ys), interval=1000)
 
-# Start the periodic plot update
-root.after(1000, update_plot)
+# Interfaz de Tkinter para seleccionar el GPIO
+root = tk.Tk()
+root.title("GPIO Selector")
 
-# Handle window closing
-root.protocol("WM_DELETE_WINDOW", on_closing)
+frame = ttk.Frame(root, padding="10")
+frame.grid(row=0, column=0, sticky=(tk.W, tk.E))
 
-# Start the Tkinter main loop
-root.mainloop()
+label = ttk.Label(frame, text="Select GPIO:")
+label.grid(row=0, column=0, padx=5, pady=5)
+
+gpio_var = tk.IntVar(value=1)
+gpio1_radio = ttk.Radiobutton(frame, text="GPIO 17", variable=gpio_var, value=1, command=lambda: change_gpio(1))
+gpio2_radio = ttk.Radiobutton(frame, text="GPIO 21", variable=gpio_var, value=2, command=lambda: change_gpio(2))
+
+gpio1_radio.grid(row=0, column=1, padx=5, pady=5)
+gpio2_radio.grid(row=0, column=2, padx=5, pady=5)
+
+# Ejecuta la interfaz de Tkinter en un hilo separado
+def run_tkinter():
+    root.mainloop()
+
+import threading
+tk_thread = threading.Thread(target=run_tkinter)
+tk_thread.start()
+
+# Ejecuta la gráfica de Matplotlib
+plt.show()
