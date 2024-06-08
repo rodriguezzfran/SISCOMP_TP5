@@ -60,8 +60,8 @@ Para poder comenzar a desarrollar nuestro driver necesitamos un dispositivo que 
 ## Implementación Física
 Para la comprobación del funcionamiento del CDD en la Raspberry Pi 3, se hizo uso de dos pines GPIO (17 y 27) configurados como entrada para poder simular el ingreso de dos señales por esos pines y mediante el CDD se hace el procesamiento y se grafica la señal recibida.
 La señal, por cuestiones de simplicidad, se utilizó el pin de salida de tensión de 3V3, que mediante dos pulsadores se simulan la respuesta de activación de un sensor.
-Se colocaron resistencias de 10[K \Omega] en configuración Pull-Up, entonces, mientras los pulsadores permanencen sin presionarse, a la entrada de los pines hay señal 3V3 o 1 lógico, al momento de presionar el pulsador, la tensón queda en 0V o lo que es igual a 0 lógico. 
-
+Se colocaron resistencias de 10[KΩ] en configuración Pull-Up, entonces, mientras los pulsadores permanencen sin presionarse, a la entrada de los pines hay señal 3V3 o 1 lógico, al momento de presionar el pulsador, la tensón queda en 0V o lo que es igual a 0 lógico. 
+![tp5-circuito](https://github.com/rodriguezzfran/SISCOMP_TP5/assets/103122420/9f6298e1-99eb-4d54-9394-b98b62e0ad9d)
 
  
 
